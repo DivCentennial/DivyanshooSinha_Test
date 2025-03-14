@@ -3,26 +3,18 @@ import Combine
 
 // MARK: - Models
 
+// Updated model structure to match v2 API response
 struct TriviaQuestion: Identifiable, Decodable {
     let id: String
     let category: String
     let correctAnswer: String
     let incorrectAnswers: [String]
-    let question: String
+    let question: Question
     let difficulty: String
     
-    enum CodingKeys: String, CodingKey {
-        case id
-        case category
-        case correctAnswer = "correctAnswer"
-        case incorrectAnswers = "incorrectAnswers"
-        case question = "question"
-        case difficulty = "difficulty"
+    struct Question: Decodable {
+        let text: String
     }
-}
-
-struct TriviaResponse: Decodable {
-    let questions: [TriviaQuestion]
 }
 
 enum TriviaError: Error {
@@ -65,24 +57,30 @@ class TriviaViewModel: ObservableObject {
     
     let questionCount = 6
     
+    // API key should be added here securely in a real app
+    private let apiKey = "YOUR_API_KEY_HERE" // Replace this with your actual API key
+    
     func fetchQuestions(difficulty: Difficulty) {
         isLoading = true
         errorMessage = nil
         
-        // Updated URL to use v2 endpoint
         guard let url = URL(string: "https://the-trivia-api.com/v2/questions?limit=\(questionCount)&difficulty=\(difficulty.rawValue)") else {
             errorMessage = "Invalid URL"
             isLoading = false
             return
         }
         
-        URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
+        var request = URLRequest(url: url)
+        request.addValue(apiKey, forHTTPHeaderField: "3KmksCYspWRErAe4u4DDffypc")
+        
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 self.isLoading = false
                 
                 if let error = error {
                     self.errorMessage = "Network error: \(error.localizedDescription)"
+                    print("Network error: \(error.localizedDescription)")
                     return
                 }
                 
@@ -91,13 +89,22 @@ class TriviaViewModel: ObservableObject {
                     return
                 }
                 
+                // Print the response for debugging
+                if let jsonString = String(data: data, encoding: .utf8) {
+                    print("API Response: \(jsonString)")
+                }
+                
                 do {
                     let decodedResponse = try JSONDecoder().decode([TriviaQuestion].self, from: data)
                     self.questions = decodedResponse
-                    self.prepareQuestion()
+                    if !self.questions.isEmpty {
+                        self.prepareQuestion()
+                    } else {
+                        self.errorMessage = "No questions returned"
+                    }
                 } catch {
                     print("Decoding error: \(error)")
-                    self.errorMessage = "Could not decode response"
+                    self.errorMessage = "Could not decode response: \(error.localizedDescription)"
                 }
             }
         }.resume()
@@ -275,7 +282,6 @@ struct ContentView: View {
     }
 }
 
-// Added ErrorView that was missing in the previous code
 struct ErrorView: View {
     let errorMessage: String
     @Binding var isPresented: Bool
@@ -381,9 +387,9 @@ struct QuestionView: View {
             }
             .padding(.top)
             
-            // Question
+            // Question - Updated to use question.text
             ScrollView {
-                Text(currentQuestion.question)
+                Text(currentQuestion.question.text)
                     .font(.title3)
                     .multilineTextAlignment(.center)
                     .padding()
@@ -466,86 +472,86 @@ struct AnswerButton: View {
     }
     
     private var backgroundColor: Color {
-        if isAnswered {
-            if isCorrect {
-                return Color.green.opacity(0.3)
-            } else if isSelected {
-                return Color.red.opacity(0.3)
+            if isAnswered {
+                if isCorrect {
+                    return Color.green.opacity(0.3)
+                } else if isSelected {
+                    return Color.red.opacity(0.3)
+                } else {
+                    return Color.gray.opacity(0.3)
+                }
             } else {
-                return Color.gray.opacity(0.3)
+                return isSelected ? Color.blue.opacity(0.3) : Color.gray.opacity(0.1)
             }
-        } else {
-            return isSelected ? Color.blue.opacity(0.3) : Color.gray.opacity(0.1)
+        }
+        
+        private var foregroundColor: Color {
+            if isAnswered && !isCorrect && !isSelected {
+                return .gray
+            } else {
+                return .primary
+            }
+        }
+        
+        private var indicatorIcon: String {
+            if isCorrect {
+                return "checkmark.circle.fill"
+            } else if isSelected {
+                return "xmark.circle.fill"
+            } else {
+                return ""
+            }
+        }
+        
+        private var indicatorColor: Color {
+            isCorrect ? .green : .red
         }
     }
-    
-    private var foregroundColor: Color {
-        if isAnswered && !isCorrect && !isSelected {
-            return .gray
-        } else {
-            return .primary
-        }
-    }
-    
-    private var indicatorIcon: String {
-        if isCorrect {
-            return "checkmark.circle.fill"
-        } else if isSelected {
-            return "xmark.circle.fill"
-        } else {
-            return ""
-        }
-    }
-    
-    private var indicatorColor: Color {
-        isCorrect ? .green : .red
-    }
-}
 
-struct GameOverView: View {
-    let score: Int
-    @Binding var isPresented: Bool
-    
-    var body: some View {
-        VStack(spacing: 30) {
-            Text("Game Over!")
-                .font(.largeTitle)
-                .fontWeight(.bold)
-            
-            Text("You scored \(score)%")
-                .font(.title)
-            
-            Button {
-                isPresented = false
-            } label: {
-                Text("Return to Main Menu")
+    struct GameOverView: View {
+        let score: Int
+        @Binding var isPresented: Bool
+        
+        var body: some View {
+            VStack(spacing: 30) {
+                Text("Game Over!")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                
+                Text("You scored \(score)%")
+                    .font(.title)
+                
+                Button {
+                    isPresented = false
+                } label: {
+                    Text("Return to Main Menu")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .cornerRadius(10)
+                }
+                .padding(.horizontal)
+            }
+            .padding()
+        }
+    }
+
+    struct LoadingView: View {
+        var body: some View {
+            VStack {
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle())
+                    .scaleEffect(2)
+                
+                Text("Loading questions...")
                     .font(.headline)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue)
-                    .cornerRadius(10)
+                    .padding(.top, 30)
             }
-            .padding(.horizontal)
-        }
-        .padding()
-    }
-}
-
-struct LoadingView: View {
-    var body: some View {
-        VStack {
-            ProgressView()
-                .progressViewStyle(CircularProgressViewStyle())
-                .scaleEffect(2)
-            
-            Text("Loading questions...")
-                .font(.headline)
-                .padding(.top, 30)
         }
     }
-}
 
-#Preview {
-    ContentView()
-}
+    #Preview {
+        ContentView()
+    }
