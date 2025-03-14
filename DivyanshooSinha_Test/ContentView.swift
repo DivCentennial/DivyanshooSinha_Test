@@ -48,7 +48,7 @@ class TriviaViewModel: ObservableObject {
     @Published var showHint = false
     @Published var isAnswered = false
     @Published var score = 0
-    @Published var isGameOver = false
+    @Published var isGameOver = true
     @Published var isLoading = false
     @Published var errorMessage: String?
     
@@ -72,6 +72,8 @@ class TriviaViewModel: ObservableObject {
         
         var request = URLRequest(url: url)
         request.addValue(apiKey, forHTTPHeaderField: "3KmksCYspWRErAe4u4DDffypc")
+        
+
         
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             DispatchQueue.main.async {
@@ -328,7 +330,14 @@ struct GameView: View {
         } else if let errorMessage = viewModel.errorMessage {
             ErrorView(errorMessage: errorMessage, isPresented: $isPresented)
         } else if viewModel.isGameOver {
-            GameOverView(score: viewModel.getScorePercentage(), isPresented: $isPresented)
+            GameOverView(
+                score: viewModel.getScorePercentage(),
+                isPresented: $isPresented,
+                onPlayAgain: {
+                    viewModel.resetGame()
+                    viewModel.fetchQuestions(difficulty: .medium) // Adjust difficulty as needed
+                }
+            )
         } else if !viewModel.questions.isEmpty {
             QuestionView(viewModel: viewModel)
         } else {
@@ -339,11 +348,16 @@ struct GameView: View {
     }
 }
 
+
 struct QuestionView: View {
     @ObservedObject var viewModel: TriviaViewModel
     
-    var currentQuestion: TriviaQuestion {
-        viewModel.questions[viewModel.currentQuestionIndex]
+    // Safely access the current question
+    var currentQuestion: TriviaQuestion? {
+        guard viewModel.currentQuestionIndex < viewModel.questions.count else {
+            return nil
+        }
+        return viewModel.questions[viewModel.currentQuestionIndex]
     }
     
     // Used for flashing timer
@@ -378,57 +392,64 @@ struct QuestionView: View {
                 .padding(.horizontal)
             
             // Category
-            HStack {
-                Image(systemName: viewModel.getCategoryIcon(for: currentQuestion.category))
-                    .font(.title)
-                
-                Text(currentQuestion.category)
-                    .font(.headline)
-            }
-            .padding(.top)
-            
-            // Question - Updated to use question.text
-            ScrollView {
-                Text(currentQuestion.question.text)
-                    .font(.title3)
-                    .multilineTextAlignment(.center)
-                    .padding()
-            }
-            .frame(height: 100)
-            
-            // Answer options
-            VStack(spacing: 10) {
-                ForEach(viewModel.shuffledAnswers, id: \.self) { answer in
-                    AnswerButton(
-                        answer: answer,
-                        isSelected: viewModel.selectedAnswer == answer,
-                        isCorrect: answer == currentQuestion.correctAnswer,
-                        isAnswered: viewModel.isAnswered,
-                        showHint: viewModel.showHint && answer != currentQuestion.correctAnswer &&
-                                 !viewModel.shuffledAnswers.prefix(2).contains(answer),
-                        action: {
-                            viewModel.selectAnswer(answer)
-                        }
-                    )
+            if let currentQuestion = currentQuestion {
+                HStack {
+                    Image(systemName: viewModel.getCategoryIcon(for: currentQuestion.category))
+                        .font(.title)
+                    
+                    Text(currentQuestion.category)
+                        .font(.headline)
                 }
-            }
-            .padding(.horizontal)
-            
-            // Hint button
-            Button {
-                viewModel.showHintAction()
-            } label: {
-                Text("Hint")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
+                .padding(.top)
+                
+                // Question - Updated to use question.text
+                ScrollView {
+                    Text(currentQuestion.question.text)
+                        .font(.title3)
+                        .multilineTextAlignment(.center)
+                        .padding()
+                }
+                .frame(height: 100)
+                
+                // Answer options
+                VStack(spacing: 10) {
+                    ForEach(viewModel.shuffledAnswers, id: \.self) { answer in
+                        AnswerButton(
+                            answer: answer,
+                            isSelected: viewModel.selectedAnswer == answer,
+                            isCorrect: answer == currentQuestion.correctAnswer,
+                            isAnswered: viewModel.isAnswered,
+                            showHint: viewModel.showHint && answer != currentQuestion.correctAnswer &&
+                                     !viewModel.shuffledAnswers.prefix(2).contains(answer),
+                            action: {
+                                viewModel.selectAnswer(answer)
+                            }
+                        )
+                    }
+                }
+                .padding(.horizontal)
+                
+                // Hint button
+                Button {
+                    viewModel.showHintAction()
+                } label: {
+                    Text("Hint")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(viewModel.showHint || viewModel.isAnswered ? Color.gray : Color.orange)
+                        .cornerRadius(10)
+                }
+                .disabled(viewModel.showHint || viewModel.isAnswered)
+                .padding(.horizontal)
+                .padding(.top)
+            } else {
+                // Handle the case where there is no current question
+                Text("No question available")
+                    .font(.title)
                     .padding()
-                    .background(viewModel.showHint || viewModel.isAnswered ? Color.gray : Color.orange)
-                    .cornerRadius(10)
             }
-            .disabled(viewModel.showHint || viewModel.isAnswered)
-            .padding(.horizontal)
-            .padding(.top)
             
             Spacer()
         }
@@ -508,23 +529,27 @@ struct AnswerButton: View {
         }
     }
 
+
     struct GameOverView: View {
         let score: Int
         @Binding var isPresented: Bool
-        
+        let onPlayAgain: () -> Void
+
         var body: some View {
             VStack(spacing: 30) {
-                Text("Game Over!")
+                Text("Game Over")
                     .font(.largeTitle)
                     .fontWeight(.bold)
-                
+
                 Text("You scored \(score)%")
                     .font(.title)
-                
+                    .fontWeight(.semibold)
+                    .foregroundColor(score >= 50 ? .green : .red)
+
                 Button {
-                    isPresented = false
+                    isPresented = false // Return to main menu
                 } label: {
-                    Text("Return to Main Menu")
+                    Text("Main Menu")
                         .font(.headline)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
@@ -533,10 +558,25 @@ struct AnswerButton: View {
                         .cornerRadius(10)
                 }
                 .padding(.horizontal)
+
+                Button {
+                    onPlayAgain() // Restart the game
+                } label: {
+                    Text("Play Again")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.green)
+                        .cornerRadius(10)
+                }
+                .padding(.horizontal)
             }
             .padding()
         }
     }
+
+
 
     struct LoadingView: View {
         var body: some View {
