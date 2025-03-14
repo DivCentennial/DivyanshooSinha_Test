@@ -58,7 +58,7 @@ class TriviaViewModel: ObservableObject {
     let questionCount = 6
     
     // API key should be added here securely in a real app
-    private let apiKey = "YOUR_API_KEY_HERE" // Replace this with your actual API key
+    private let apiKey = "3KmksCYspWRErAe4u4DDffypc" // Replace this with your actual API key
     
     func fetchQuestions(difficulty: Difficulty) {
         isLoading = true
